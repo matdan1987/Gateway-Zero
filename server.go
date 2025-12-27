@@ -1143,7 +1143,7 @@ func handleAuthAPI(w http.ResponseWriter, r *http.Request) {
 		}
 
 		configLock.RLock()
-		validUser := req.User == globalConfig.AdminUser
+		validUser := sanitizeString(req.User) == globalConfig.AdminUser
 		validPass := checkPasswordHash(req.Password, globalConfig.AdminPassHash)
 		maxAttempts := globalConfig.MaxLoginAttempts
 		configLock.RUnlock()
