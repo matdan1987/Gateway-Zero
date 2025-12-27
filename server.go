@@ -1836,7 +1836,7 @@ func main() {
 		},
 	}
 
-	// HTTP server (redirects to HTTPS)
+	// HTTP server (handles setup, then redirects to HTTPS)
 	go func() {
 		httpMux := http.NewServeMux()
 		httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -1846,7 +1846,23 @@ func main() {
 				return
 			}
 
-			// Redirect to HTTPS
+			// Check if setup is done and we have a domain
+			configLock.RLock()
+			setupDone := globalConfig.SetupDone
+			domain := globalConfig.Domain
+			configLock.RUnlock()
+
+			// If setup not done, or accessing via IP, serve HTTP
+			host := strings.Split(r.Host, ":")[0]
+			isIP := net.ParseIP(host) != nil
+
+			if !setupDone || isIP || domain == "" {
+				// Serve via HTTP (setup phase or IP access)
+				mux.ServeHTTP(w, r)
+				return
+			}
+
+			// Setup is done and accessing via domain - redirect to HTTPS
 			target := "https://" + r.Host + r.URL.Path
 			if r.URL.RawQuery != "" {
 				target += "?" + r.URL.RawQuery
