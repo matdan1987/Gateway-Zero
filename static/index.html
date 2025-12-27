@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gateway Zero 2.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #1e293b; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        .leaflet-container { background: #0f172a; }
+        @keyframes flow { 0% { left: 0; opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+        .animate-flow { animation: flow 2s linear infinite; }
+        @keyframes pulse-ring { 0% { transform: scale(0.5); opacity: 0; } 50% { opacity: 0.5; } 100% { transform: scale(3); opacity: 0; } }
+        .pulse-icon {
+            border-radius: 50%; height: 12px; width: 12px; position: absolute;
+            border: 2px solid white; box-shadow: 0 0 10px currentColor;
+        }
+        .pulse-icon:after {
+            content: ''; width: 100%; height: 100%; position: absolute; border-radius: 50%;
+            background-color: currentColor; opacity: 0.8;
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        .marker-green { color: #4ade80; background: #4ade80; }
+        .marker-red { color: #ef4444; background: #ef4444; }
+        .tab-active { border-color: #3b82f6 !important; color: #60a5fa !important; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 min-h-screen selection:bg-blue-500/30">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- LOADING SPINNER -->
+    <div id="view-loading" class="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center z-50">
+        <i data-lucide="shield" class="w-12 h-12 text-blue-500 animate-pulse mb-4"></i>
+        <p class="text-slate-400">Gateway Zero lädt...</p>
+        <p class="text-slate-500 text-xs mt-2" id="version-text">v2.0.0</p>
+    </div>
+
+    <!-- SETUP VIEW -->
+    <div id="view-setup" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 p-8 rounded-2xl w-full max-w-lg shadow-2xl">
+            <div class="flex items-center gap-3 mb-6 justify-center">
+                <div class="bg-blue-500/20 p-3 rounded-xl"><i data-lucide="rocket" class="w-8 h-8 text-blue-400"></i></div>
+            </div>
+            <h1 class="text-2xl font-bold text-center text-white mb-2">Willkommen bei Gateway Zero 2.0</h1>
+            <p class="text-center text-slate-400 mb-8">Sicherheits-Gateway mit Profi-Features einrichten.</p>
+
+            <form onsubmit="doSetup(event)" class="space-y-4">
+                <div>
+                    <label class="block text-sm text-slate-300 mb-1">Domain (ohne http/https)</label>
+                    <input id="setup-domain" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-600 focus:border-blue-500 outline-none" placeholder="gateway.example.com" required>
+                </div>
+                <div>
+                    <label class="block text-sm text-slate-300 mb-1">Admin Email (für SSL-Zertifikate)</label>
+                    <input id="setup-email" type="email" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-600 focus:border-blue-500 outline-none" placeholder="admin@example.com" required>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">Admin Benutzer</label>
+                        <input id="setup-user" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none" value="admin" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">Passwort (min. 8 Zeichen)</label>
+                        <input id="setup-pass" type="password" minlength="8" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none" required>
+                    </div>
+                </div>
+                <div id="setup-error" class="hidden text-red-400 text-sm text-center p-2 bg-red-500/10 rounded"></div>
+                <button type="submit" id="setup-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg mt-4 transition shadow-lg shadow-blue-500/20 flex items-center justify-center">
+                    System Starten
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- LOGIN VIEW -->
+    <div id="view-login" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 p-8 rounded-2xl w-full max-w-md shadow-2xl">
+            <div class="text-center mb-8">
+                <i data-lucide="lock" class="w-10 h-10 text-blue-400 mx-auto mb-4"></i>
+                <h1 class="text-2xl font-bold text-white">Admin Login</h1>
+                <p class="text-slate-400">Gateway Zero Dashboard</p>
+            </div>
+            <form onsubmit="doLogin(event)" class="space-y-4">
+                <div>
+                    <input id="login-user" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="Benutzername" required>
+                </div>
+                <div>
+                    <input id="login-pass" type="password" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="Passwort" required>
+                </div>
+                <div id="login-error" class="text-red-400 text-sm text-center hidden p-2 bg-red-500/10 rounded"></div>
+                <button type="submit" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-lg transition shadow-lg shadow-green-500/20">Anmelden</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- DASHBOARD VIEW -->
+    <div id="view-dashboard" class="hidden pb-20">
+        <!-- Navigation -->
+        <nav class="border-b border-slate-700/60 bg-slate-900/95 backdrop-blur-md sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <i data-lucide="shield" class="w-6 h-6 text-blue-400"></i>
+                    <span class="text-xl font-bold text-white">Gateway Zero</span>
+                    <span class="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded" id="nav-version">v2.0</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div id="status-indicator" class="hidden md:flex items-center text-sm text-green-400">
+                        <div class="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+                        <span id="uptime-display">Online</span>
+                    </div>
+                    <div class="text-sm text-slate-400 font-mono" id="dash-domain"></div>
+                    <div class="flex items-center space-x-3 text-sm bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700 cursor-pointer hover:bg-slate-700 transition" onclick="openSettings()">
+                        <span class="text-slate-400">Admin</span>
+                        <i data-lucide="settings" class="w-3 h-3 ml-1 text-slate-400"></i>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+            <!-- Header -->
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-white">Dashboard</h1>
+                    <p class="text-slate-400 text-sm mt-1">System-Übersicht und Management</p>
+                </div>
+                <button onclick="openWizard()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-xl font-medium flex items-center transition shadow-lg shadow-blue-500/20">
+                    <i data-lucide="plus" class="w-5 h-5 mr-2"></i> Dienst hinzufügen
+                </button>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-slate-800/50 backdrop-blur p-4 rounded-xl border border-slate-700/50">
+                    <div class="text-slate-400 text-sm mb-1 flex items-center gap-2">
+                        <i data-lucide="activity" class="w-4 h-4"></i> Latenz
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="stat-ping">- ms</div>
+                </div>
+                <div class="bg-slate-800/50 backdrop-blur p-4 rounded-xl border border-slate-700/50">
+                    <div class="text-slate-400 text-sm mb-1 flex items-center gap-2">
+                        <i data-lucide="shield-ban" class="w-4 h-4"></i> Gebannt
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="stat-banned">0</div>
+                </div>
+                <div class="bg-slate-800/50 backdrop-blur p-4 rounded-xl border border-slate-700/50">
+                    <div class="text-slate-400 text-sm mb-1 flex items-center gap-2">
+                        <i data-lucide="server" class="w-4 h-4"></i> Services
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="stat-hosts">0</div>
+                </div>
+                <div class="bg-slate-800/50 backdrop-blur p-4 rounded-xl border border-slate-700/50">
+                    <div class="text-slate-400 text-sm mb-1 flex items-center gap-2">
+                        <i data-lucide="zap" class="w-4 h-4"></i> Requests
+                    </div>
+                    <div class="text-2xl font-bold text-white" id="stat-requests">0</div>
+                </div>
+            </div>
+
+            <!-- Flow Visualization -->
+            <div class="bg-slate-800/30 rounded-2xl border border-slate-700/50 p-6">
+                <h3 class="text-white font-bold mb-4 flex items-center gap-2">
+                    <i data-lucide="workflow" class="w-5 h-5"></i> Traffic Flow
+                </h3>
+                <div class="relative flex items-center justify-between gap-4 py-4 overflow-x-auto">
+                    <div class="flex flex-col items-center min-w-[100px]">
+                        <i data-lucide="globe" class="w-10 h-10 text-blue-400 mb-2"></i>
+                        <span class="text-sm font-bold">Internet</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-slate-700 relative overflow-hidden mx-4">
+                        <div class="absolute inset-0 bg-blue-500/50 animate-flow"></div>
+                    </div>
+                    <div class="flex-col items-center min-w-[100px] flex">
+                        <i data-lucide="shield-check" class="w-10 h-10 text-white mb-2"></i>
+                        <span class="text-sm font-bold">Gateway</span>
+                    </div>
+                    <div class="flex-1 flex flex-col gap-2" id="flow-connections"></div>
+                </div>
+            </div>
+
+            <!-- Map & Logs Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[400px]">
+                <div class="lg:col-span-2 bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 relative">
+                    <div id="map" class="w-full h-full z-0"></div>
+                    <div class="absolute bottom-4 left-4 bg-slate-900/90 px-3 py-1 rounded-lg text-xs z-[1000] border border-slate-600">
+                        <span class="text-green-400">●</span> Allow <span class="text-red-400 ml-2">●</span> Block
+                    </div>
+                </div>
+                <div class="bg-slate-800 rounded-2xl border border-slate-700 p-4 flex flex-col">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-white flex items-center gap-2">
+                            <i data-lucide="activity" class="w-4 h-4"></i> Live Log
+                        </h3>
+                        <button onclick="openLogsModal()" class="text-xs text-blue-400 hover:text-blue-300">
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </button>
+                    </div>
+                    <div id="live-log-list" class="flex-1 overflow-y-auto space-y-2 text-xs font-mono pr-2 custom-scroll"></div>
+                </div>
+            </div>
+
+            <!-- Hosts Grid -->
+            <div>
+                <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <i data-lucide="server" class="w-5 h-5"></i> Aktive Dienste
+                </h2>
+                <div id="host-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+            </div>
+
+            <!-- Advanced Management Buttons -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 border-t border-slate-800">
+                <button onclick="openLogsModal()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-4 py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <i data-lucide="file-text" class="w-4 h-4"></i> Logs
+                </button>
+                <button onclick="openBannedModal()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-4 py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <i data-lucide="shield-ban" class="w-4 h-4"></i> Banned IPs
+                </button>
+                <button onclick="openSessionsModal()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-4 py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <i data-lucide="users" class="w-4 h-4"></i> Sessions
+                </button>
+                <button onclick="openBackupModal()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-4 py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <i data-lucide="database" class="w-4 h-4"></i> Backup
+                </button>
+            </div>
+        </main>
+
+        <!-- Modals will be added via JavaScript for better organization -->
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl border border-slate-700 hidden z-50 transition-all">
+        <div class="flex items-center gap-3">
+            <i data-lucide="check-circle" class="w-5 h-5 text-green-400" id="toast-icon"></i>
+            <span id="toast-message">Aktion erfolgreich</span>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let map, hosts = [], currentDomain = "", csrfToken = "", systemStats = {};
+        const API_BASE = window.location.origin + '/api';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            checkAuthStatus();
+            createModals();
+        });
+
+        // Auth Status Check
+        async function checkAuthStatus() {
+            try {
+                const res = await fetch('/api/auth/status');
+                const status = await res.json();
+
+                currentDomain = status.domain || window.location.hostname;
+                csrfToken = status.csrf_token || "";
+
+                document.getElementById('dash-domain').innerText = currentDomain;
+                document.getElementById('nav-version').innerText = 'v' + (status.version || '2.0');
+                document.getElementById('version-text').innerText = 'v' + (status.version || '2.0');
+
+                document.getElementById('view-loading').classList.add('hidden');
+
+                if (!status.setup_done) {
+                    showView('view-setup');
+                } else if (!status.logged_in) {
+                    showView('view-login');
+                } else {
+                    showView('view-dashboard');
+                    initDashboard();
+                }
+            } catch(e) {
+                console.error('Auth check failed:', e);
+                showToast('Verbindungsfehler', 'error');
+            }
+        }
+
+        function showView(id) {
+            ['view-setup', 'view-login', 'view-dashboard'].forEach(v =>
+                document.getElementById(v).classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        // Setup
+        async function doSetup(e) {
+            e.preventDefault();
+            const btn = document.getElementById('setup-btn');
+            const errorEl = document.getElementById('setup-error');
+            const originalHTML = btn.innerHTML;
+
+            btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin w-5 h-5 mr-2"></i> Wird eingerichtet...';
+            lucide.createIcons();
+            btn.disabled = true;
+            errorEl.classList.add('hidden');
+
+            const data = {
+                domain: document.getElementById('setup-domain').value.trim(),
+                email: document.getElementById('setup-email').value.trim(),
+                user: document.getElementById('setup-user').value.trim(),
+                password: document.getElementById('setup-pass').value
+            };
+
+            try {
+                const res = await fetch('/api/auth/setup', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify(data)
+                });
+
+                if(res.ok) {
+                    location.reload();
+                } else {
+                    const error = await res.text();
+                    errorEl.textContent = error || 'Setup fehlgeschlagen';
+                    errorEl.classList.remove('hidden');
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                }
+            } catch(err) {
+                errorEl.textContent = 'Netzwerkfehler. Bitte erneut versuchen.';
+                errorEl.classList.remove('hidden');
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
+        }
+
+        // Login
+        async function doLogin(e) {
+            e.preventDefault();
+            const errorEl = document.getElementById('login-error');
+            errorEl.classList.add('hidden');
+
+            const data = {
+                user: document.getElementById('login-user').value.trim(),
+                password: document.getElementById('login-pass').value
+            };
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify(data)
+                });
+
+                if(res.ok) {
+                    location.reload();
+                } else {
+                    const error = await res.text();
+                    errorEl.textContent = error || 'Falsche Zugangsdaten';
+                    errorEl.classList.remove('hidden');
+                }
+            } catch(err) {
+                errorEl.textContent = 'Netzwerkfehler';
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        // Dashboard Init
+        function initDashboard() {
+            initMap();
+            loadHosts();
+            loadStats();
+            loadLogs();
+
+            setInterval(loadHosts, 3000);
+            setInterval(loadStats, 5000);
+            setInterval(loadLogs, 2000);
+        }
+
+        function initMap() {
+            map = L.map('map', { zoomControl: false, attributionControl: false }).setView([51.1657, 10.4515], 4);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        }
+
+        // API Helpers with CSRF
+        async function apiRequest(url, options = {}) {
+            if (!options.headers) options.headers = {};
+            if (csrfToken && (options.method === 'POST' || options.method === 'DELETE' || options.method === 'PUT')) {
+                options.headers['X-CSRF-Token'] = csrfToken;
+            }
+            return fetch(url, options);
+        }
+
+        // Load Functions
+        async function loadHosts() {
+            try {
+                const res = await fetch('/api/hosts');
+                hosts = await res.json() || [];
+                renderHosts();
+                renderFlow();
+            } catch(e) {
+                console.error('Load hosts failed:', e);
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                systemStats = await res.json();
+
+                document.getElementById('stat-ping').innerText =
+                    systemStats.ping > 0 ? systemStats.ping + ' ms' : 'Offline';
+                document.getElementById('stat-banned').innerText = systemStats.bannedCount || 0;
+                document.getElementById('stat-hosts').innerText = systemStats.activeHosts || 0;
+                document.getElementById('stat-requests').innerText = systemStats.totalRequests || 0;
+
+                // Uptime display
+                if (systemStats.uptime) {
+                    const hours = Math.floor(systemStats.uptime / 3600);
+                    const mins = Math.floor((systemStats.uptime % 3600) / 60);
+                    document.getElementById('uptime-display').innerText =
+                        `Online ${hours}h ${mins}m`;
+                }
+            } catch(e) {
+                console.error('Load stats failed:', e);
+            }
+        }
+
+        async function loadLogs() {
+            try {
+                const res = await fetch('/api/logs');
+                const logs = await res.json();
+                renderLogs(logs.slice(0, 20));
+            } catch(e) {
+                console.error('Load logs failed:', e);
+            }
+        }
+
+        // Render Functions
+        function renderHosts() {
+            const grid = document.getElementById('host-grid');
+            grid.innerHTML = '';
+
+            hosts.forEach(h => {
+                const card = createHostCard(h);
+                grid.appendChild(card);
+            });
+
+            // Add button
+            const addBtn = document.createElement('button');
+            addBtn.onclick = openWizard;
+            addBtn.className = "border-2 border-dashed border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center text-slate-500 hover:text-blue-400 hover:border-blue-500/50 hover:bg-slate-800/50 transition-all group h-full min-h-[180px]";
+            addBtn.innerHTML = `
+                <div class="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                    <i data-lucide="plus" class="w-6 h-6"></i>
+                </div>
+                <span class="font-medium">Dienst hinzufügen</span>
+            `;
+            grid.appendChild(addBtn);
+            lucide.createIcons();
+        }
+
+        function createHostCard(h) {
+            const div = document.createElement('div');
+            div.className = `host-card group relative`;
+
+            const statusColor = h.status === 'down' ? 'bg-red-500' :
+                                h.status === 'sleeping' ? 'bg-slate-500' :
+                                h.status === 'maintenance' ? 'bg-orange-500' : 'bg-green-500';
+
+            let badges = '';
+            if (h.features?.googleAuth) badges += `<div class="bg-white text-slate-900 rounded-full w-5 h-5 flex items-center justify-center font-bold text-[10px] mr-1" title="Google Auth">G</div>`;
+            if (h.features?.geo && h.features.geo !== 'none') badges += `<div class="bg-purple-500/20 text-purple-400 rounded-full w-5 h-5 flex items-center justify-center border border-purple-500/50 mr-1"><i data-lucide="globe" class="w-3 h-3"></i></div>`;
+            if (h.features?.wol) badges += `<div class="bg-green-500/20 text-green-400 rounded-full w-5 h-5 flex items-center justify-center border border-green-500/50 mr-1"><i data-lucide="zap" class="w-3 h-3"></i></div>`;
+
+            div.innerHTML = `
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl opacity-0 group-hover:opacity-30 transition duration-500 blur"></div>
+                <div class="relative flex flex-col p-4 bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-750 transition-all shadow-lg h-full min-h-[180px]">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="p-3 bg-slate-700/50 rounded-lg">
+                            <i data-lucide="${h.icon||'server'}" class="w-6 h-6 text-blue-300"></i>
+                        </div>
+                        <div class="flex items-center">
+                            <div class="flex mr-2">${badges}</div>
+                            <div class="w-3 h-3 rounded-full ${statusColor} border-2 border-slate-800 shadow-[0_0_10px_currentColor]"></div>
+                        </div>
+                    </div>
+                    <div class="flex-1 min-w-0 mb-3">
+                        <h3 class="text-white font-medium truncate text-lg">${h.name}</h3>
+                        <div class="flex items-center text-xs text-slate-400 mt-1">
+                            <span class="truncate max-w-[180px]">${h.subdomain}.${currentDomain}</span>
+                            <i data-lucide="lock" class="w-3 h-3 ml-1 text-green-400"></i>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center border-t border-slate-700/50 pt-3 mt-auto">
+                        <div class="text-xs font-mono text-slate-500">${h.internalIp}:${h.port}</div>
+                        <button onclick="toggleHostMenu(event, '${h.id}')" class="text-slate-400 hover:text-white transition p-1 rounded hover:bg-slate-700">
+                            <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            return div;
+        }
+
+        function renderFlow() {
+            const el = document.getElementById('flow-connections');
+            el.innerHTML = '';
+            hosts.filter(h => h.status !== 'sleeping').forEach(h => {
+                el.innerHTML += `<div class="flex items-center gap-2 opacity-50">
+                    <div class="h-0.5 w-8 bg-slate-600"></div>
+                    <div class="text-xs text-slate-400 border border-slate-600 px-2 py-1 rounded bg-slate-800">${h.name}</div>
+                </div>`;
+            });
+        }
+
+        function renderLogs(logs) {
+            const container = document.getElementById('live-log-list');
+            if (!logs.length) return;
+
+            const firstLog = logs[0];
+            const currentFirst = container.firstElementChild?.dataset?.time;
+            if (currentFirst === firstLog.time + firstLog.ip) return;
+
+            container.innerHTML = '';
+            logs.forEach(log => {
+                const color = log.status === 'BLOCKED' || log.status === '404' || log.status === 'BANNED' ?
+                    'text-red-400' : log.status === 'ALLOW' ? 'text-green-400' : 'text-yellow-400';
+                const div = document.createElement('div');
+                div.dataset.time = log.time + log.ip;
+                div.className = "flex justify-between border-b border-slate-700/50 pb-1";
+                div.innerHTML = `
+                    <span class="text-slate-500">${log.time}</span>
+                    <span class="${color} font-bold text-xs">${log.status}</span>
+                    <span class="text-white truncate w-20">${log.ip}</span>
+                    <span class="text-slate-400 truncate w-16 text-right text-[10px]">${log.message}</span>
+                `;
+                container.appendChild(div);
+            });
+
+            // Add map markers for interesting events
+            if (firstLog.status !== 'LAN' && Math.random() > 0.7) {
+                const lat = 48 + Math.random() * 6;
+                const lng = 6 + Math.random() * 10;
+                const isBlocked = firstLog.status === 'BLOCKED' || firstLog.status === 'BANNED';
+                const icon = L.divIcon({
+                    className: `pulse-icon ${isBlocked ? 'marker-red' : 'marker-green'}`,
+                    iconSize: [12,12],
+                    iconAnchor: [6,6]
+                });
+                const m = L.marker([lat, lng], {icon: icon}).addTo(map);
+                setTimeout(() => map.removeLayer(m), 3000);
+            }
+        }
+
+        // Toast Notification
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            const msg = document.getElementById('toast-message');
+
+            msg.textContent = message;
+
+            if (type === 'error') {
+                icon.setAttribute('data-lucide', 'x-circle');
+                icon.className = 'w-5 h-5 text-red-400';
+            } else {
+                icon.setAttribute('data-lucide', 'check-circle');
+                icon.className = 'w-5 h-5 text-green-400';
+            }
+
+            lucide.createIcons();
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+
+        // Modal Management
+        function createModals() {
+            // This will be expanded with actual modal content
+            const modalsHTML = `
+                <div id="settings-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm">
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+                        <button onclick="closeModal('settings-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                        <h2 class="text-xl font-bold text-white mb-6">System Einstellungen</h2>
+                        <!-- Content added dynamically -->
+                        <div id="settings-content"></div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalsHTML);
+            lucide.createIcons();
+        }
+
+        function openSettings() {
+            // Settings modal implementation
+            showToast('Settings werden geladen...', 'info');
+        }
+
+        function openWizard() {
+            showToast('Wizard wird implementiert...', 'info');
+        }
+
+        function openLogsModal() {
+            showToast('Log-Viewer wird geladen...', 'info');
+        }
+
+        function openBannedModal() {
+            showToast('Banned IPs werden geladen...', 'info');
+        }
+
+        function openSessionsModal() {
+            showToast('Sessions werden geladen...', 'info');
+        }
+
+        function openBackupModal() {
+            showToast('Backup-Manager wird geladen...', 'info');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function toggleHostMenu(e, hostId) {
+            e.stopPropagation();
+            showToast('Host-Menu wird implementiert...', 'info');
+        }
+    </script>
+</body>
+</html>
