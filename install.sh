@@ -131,6 +131,13 @@ chmod 600 $APP_DIR/data/*.json 2>/dev/null || true
 echo -e "${BLUE}→ Setze Capability für Port-Binding${NC}"
 setcap 'cap_net_bind_service=+ep' $APP_DIR/$APP_NAME
 
+# Verify capability was set
+if getcap $APP_DIR/$APP_NAME | grep -q cap_net_bind_service; then
+    echo -e "${GREEN}✓ Capability erfolgreich gesetzt${NC}"
+else
+    echo -e "${YELLOW}⚠  Capability konnte nicht gesetzt werden. Verwende alternative Systemd-Methode.${NC}"
+fi
+
 # 6. Create Systemd Service with Hardening
 echo -e "\n${GREEN}[6/7] Systemd Service${NC}"
 cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF
@@ -147,6 +154,10 @@ WorkingDirectory=$APP_DIR
 ExecStart=$APP_DIR/$APP_NAME -port 80 -https-port 443
 Restart=on-failure
 RestartSec=5s
+
+# Capabilities for binding to privileged ports
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 # Security Hardening
 NoNewPrivileges=true

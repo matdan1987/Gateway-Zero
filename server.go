@@ -290,8 +290,11 @@ func initGeoIP() {
 }
 
 func downloadGeoIPDatabase() error {
-	// Using free GeoLite2 database from db-ip.com (no account required)
-	url := "https://download.db-ip.com/free/dbip-country-lite-2024-12.mmdb.gz"
+	// Using free GeoLite2 database from db-ip.com
+	// Note: This downloads the latest monthly release
+	url := "https://download.db-ip.com/free/dbip-country-lite-2025-01.mmdb.gz"
+
+	log.Println("Downloading GeoIP database from", url)
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Get(url)
@@ -301,7 +304,18 @@ func downloadGeoIPDatabase() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		// Try alternative URL (monthly archives)
+		log.Printf("First URL failed with HTTP %d, trying fallback...", resp.StatusCode)
+
+		// Fallback: Try current month
+		url = "https://download.db-ip.com/free/dbip-country-lite-2024-12.mmdb.gz"
+		resp, err = client.Get(url)
+		if err != nil || resp.StatusCode != 200 {
+			// If both fail, create empty file and continue without GeoIP
+			log.Println("GeoIP download not available. Continuing without GeoIP features.")
+			return fmt.Errorf("GeoIP download failed")
+		}
+		defer resp.Body.Close()
 	}
 
 	// Save to file
@@ -312,7 +326,12 @@ func downloadGeoIPDatabase() error {
 	defer out.Close()
 
 	_, err = io.Copy(out, resp.Body)
-	return err
+	if err != nil {
+		return err
+	}
+
+	log.Println("✓ GeoIP database downloaded successfully")
+	return nil
 }
 
 func updateOAuthConfig() {
