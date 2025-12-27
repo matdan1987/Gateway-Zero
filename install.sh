@@ -30,6 +30,12 @@ fi
 # Backup existing installation
 if [ -d "$APP_DIR" ]; then
     echo -e "${YELLOW}⚠  Existierende Installation gefunden${NC}"
+    echo -e "${BLUE}Möchten Sie:${NC}"
+    echo "  1) Update (Daten behalten)"
+    echo "  2) Neuinstallation (Daten löschen, frisches Setup)"
+    read -p "Auswahl [1]: " INSTALL_TYPE
+    INSTALL_TYPE=${INSTALL_TYPE:-1}
+
     BACKUP_DIR="${APP_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
     echo -e "${BLUE}→ Erstelle Backup: $BACKUP_DIR${NC}"
     cp -r "$APP_DIR" "$BACKUP_DIR"
@@ -38,6 +44,12 @@ if [ -d "$APP_DIR" ]; then
     if systemctl is-active --quiet $SERVICE_NAME; then
         echo -e "${BLUE}→ Stoppe laufenden Service${NC}"
         systemctl stop $SERVICE_NAME
+    fi
+
+    if [ "$INSTALL_TYPE" = "2" ]; then
+        echo -e "${YELLOW}→ Lösche alte Daten für frisches Setup${NC}"
+        rm -rf $APP_DIR/data/*.json
+        echo -e "${GREEN}✓ Daten gelöscht. Setup-Wizard wird beim nächsten Start erscheinen.${NC}"
     fi
 fi
 
