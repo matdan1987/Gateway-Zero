@@ -562,14 +562,16 @@ func setSession(w http.ResponseWriter, r *http.Request, user string) string {
 		cd = "." + d
 	}
 
-	// FIXED: Secure: true for HTTPS only
+	// Secure flag: only for HTTPS connections
+	isHTTPS := r.TLS != nil
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "gz_session",
 		Value:    id,
 		Path:     "/",
 		Domain:   cd,
 		HttpOnly: true,
-		Secure:   true, // Only send over HTTPS
+		Secure:   isHTTPS, // Only secure for HTTPS
 		MaxAge:   duration * 3600,
 		SameSite: http.SameSiteStrictMode,
 	})
